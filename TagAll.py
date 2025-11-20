@@ -154,6 +154,7 @@ class TagallMod(loader.Module):
 
     @loader.sudo
     async def tignorecmd(self, message):
+        """ добавить в игнор """
         reply = await message.get_reply_message()
         args = utils.get_args(message)
         user = None
@@ -199,7 +200,8 @@ class TagallMod(loader.Module):
             await message.edit("⚠️ Нету в списке")
 
     @loader.sudo
-    async def tignlistcmd(self, message):
+    async def tignlistcmd(self, message): 
+        """ лист игнорируемых """
         ignore = self.config["IGNORE_LIST"]
         if not ignore:
             return await message.edit("📭 Пусто")
