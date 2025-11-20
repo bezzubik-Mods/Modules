@@ -178,6 +178,7 @@ class TagallMod(loader.Module):
 
     @loader.sudo
     async def tunignorecmd(self, message):
+        """ убрать из изноррирумых """
         reply = await message.get_reply_message()
         args = utils.get_args(message)
         user = None
