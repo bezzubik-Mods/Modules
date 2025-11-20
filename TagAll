@@ -44,7 +44,7 @@ class TagallMod(loader.Module):
 
     @loader.sudo
     async def tstopcmd(self, message):
-""" остановить тагалл """
+    ""* остановить тагалл """
         chat = utils.get_chat_id(message)
         self.stop_chats.add(chat)
         await message.edit("🛑 Остановка выполнена")
