@@ -5,6 +5,7 @@ from .. import loader, utils
 logger = logging.getLogger(__name__)
 
 __version: 1.2.0 __
+
 def register(cb):
     cb(TagallMod())
 
