@@ -4,25 +4,34 @@ from .. import loader, utils
 
 logger = logging.getLogger(__name__)
 
-
+__version: 1.2.0 __
 def register(cb):
     cb(TagallMod())
 
 
 @loader.tds
 class TagallMod(loader.Module):
-    """Tagall с игнором"""
+    """Tagall с игнором и стопом"""
 
-    strings = {"name": "TagAll", "subscribe to": "https://t.me/KeyZenD"}
+    strings = {"name": "TagAll", "subscribe to": "https://t.me/bezzubik_modules"}
 
     def __init__(self):
+        # meta developer: @bezzubik_modules
         self.name = self.strings["name"]
         self.config = loader.ModuleConfig(
             "IGNORE_LIST", [], "Список ID пользователей, которых не надо тегать"
         )
+        self.stop_chats = set()  # сюда заносим чаты, где нужно остановить процесс
 
     async def client_ready(self, client, db):
         self.client = client
+
+    @loader.sudo
+    async def tstopcmd(self, message):
+        """Остановить процесс тега в этом чате"""
+        chat = message.to_id
+        self.stop_chats.add(chat)
+        await message.edit("🛑 Процесс TagAll остановлен")
 
     @loader.sudo
     async def tagallcmd(self, message):
@@ -38,11 +47,22 @@ class TagallMod(loader.Module):
                 text = " ".join(args[1:])
         await message.delete()
 
-        all = message.client.iter_participants(message.to_id)
+        chat = message.to_id
+
+        # если ранее ставили стоп — удаляем стоп перед новым запуском
+        if chat in self.stop_chats:
+            self.stop_chats.remove(chat)
+
+        all = message.client.iter_participants(chat)
         chunk = []
         ignore = self.config["IGNORE_LIST"]
 
         async for user in all:
+            # проверяем стоп
+            if chat in self.stop_chats:
+                await message.client.send_message(chat, "🛑 TagAll остановлен")
+                return
+
             if user.deleted or user.id in ignore:
                 continue
 
@@ -61,10 +81,12 @@ class TagallMod(loader.Module):
             chunk.append(tag)
 
             if len(chunk) == tag_:
-                await message.client.send_message(message.to_id, "\n".join(chunk))
+                await message.client.send_message(chat, "\n".join(chunk))
                 chunk = []
-        if len(chunk) != 0:
-            await message.client.send_message(message.to_id, "\n".join(chunk))
+
+        # остаточные теги
+        if len(chunk) != 0 and chat not in self.stop_chats:
+            await message.client.send_message(chat, "\n".join(chunk))
 
     @loader.sudo
     async def tignorecmd(self, message):
