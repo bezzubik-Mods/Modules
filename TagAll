@@ -16,13 +16,12 @@
 
 import logging
 from .. import loader, utils
-from time import time, sleep
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 def register(cb):
     cb(TagallMod())
-
 
 @loader.tds
 class TagallMod(loader.Module):
@@ -35,6 +34,10 @@ class TagallMod(loader.Module):
     def __init__(self):
         self.config = loader.ModuleConfig(
             "IGNORE_LIST", [], "Игнорируемые пользователи",
+            "ANTIFLOOD_DELAY", 1.2, "Задержка между сообщениями (сек)",
+            "DELETE_DELAY", 2, "Задержка перед удалением тегов при -d (сек)"
+        )(
+            "IGNORE_LIST", [], "Игнорируемые пользователи",
             "ANTIFLOOD_DELAY", 1.2, "Задержка между сообщениями (сек)"
         )
         self.stop_chats = set()
@@ -44,26 +47,21 @@ class TagallMod(loader.Module):
 
     @loader.sudo
     async def tstopcmd(self, message):
-        """Останавливает процесс TagAll в этом чате"""
         chat = utils.get_chat_id(message)
         self.stop_chats.add(chat)
         await message.edit("🛑 Остановка выполнена")
 
     @loader.sudo
     async def tagadminscmd(self, message):
-        """[кол-во] [текст] — тегнуть только админов"""
         args = utils.get_args(message)
-        limit = 5
-        custom_text = None
-
-        if args:
-            if args[0].isdigit():
-                limit = int(args[0])
-            if len(args) > 1:
-                custom_text = " ".join(args[1:])
+        delete_after = False
+        if "-d" in args:
+            delete_after = True
+            args = [a for a in args if a != "-d"]
+        limit = int(args[0]) if args and args[0].isdigit() else 5
+        custom_text = " ".join(args[1:]) if args and len(args) > 1 else None
 
         await message.delete()
-
         chat = utils.get_chat_id(message)
         if chat in self.stop_chats:
             self.stop_chats.remove(chat)
@@ -77,99 +75,87 @@ class TagallMod(loader.Module):
                 await self.client.send_message(chat, "🛑 Остановлено")
                 return
 
-            if user.deleted or user.id in ignore:
+            if getattr(user, 'deleted', False) or user.id in ignore:
                 continue
 
-            name = user.first_name or "User"
-            if user.last_name:
-                name += f" {user.last_name}"
-            name = name.replace("<", "&lt;").replace(">", "&gt;")
+            name = (user.first_name or "User") + (f" {user.last_name}" if user.last_name else "")
             name = (name[:30] + "...") if len(name) > 33 else name
+            name = name.replace("<", "&lt;").replace(">", "&gt;")
 
-            tag = (
-                f'<a href="tg://user?id={user.id}">{custom_text}</a>'
-                if custom_text else f'<a href="tg://user?id={user.id}">{name}</a>'
-            )
-
+            tag = f'<a href="tg://user?id={user.id}">{custom_text or name}</a>'
             chunk.append(tag)
 
             if len(chunk) >= limit:
-                await self.client.send_message(chat, "\n".join(chunk))
-                sleep(self.config["ANTIFLOOD_DELAY"])
+                msg = await self.client.send_message(chat, "
+".join(chunk))
+                if delete_after:
+                    await asyncio.sleep(self.config["DELETE_DELAY"])
+                    await msg.delete()
+                await asyncio.sleep(self.config["ANTIFLOOD_DELAY"])
                 chunk = []
 
         if chunk and chat not in self.stop_chats:
-            await self.client.send_message(chat, "\n".join(chunk))
+            msg = await self.client.send_message(chat, "
+".join(chunk))
+                if delete_after:
+                    await asyncio.sleep(self.config["DELETE_DELAY"])
+                    await msg.delete()
 
     @loader.sudo
     async def tagallcmd(self, message):
-        """[кол-во] [текст] — тегнуть всех участников чата"""
         args = utils.get_args(message)
-        limit = 5
-        custom_text = None
-
-        if args:
-            if args[0].isdigit():
-                limit = int(args[0])
-            if len(args) > 1:
-                custom_text = " ".join(args[1:])
+        limit = int(args[0]) if args and args[0].isdigit() else 5
+        custom_text = " ".join(args[1:]) if args and len(args) > 1 else None
 
         await message.delete()
-
         chat = utils.get_chat_id(message)
         if chat in self.stop_chats:
             self.stop_chats.remove(chat)
 
         ignore = self.config["IGNORE_LIST"]
-        participants = message.client.iter_participants(message.to_id)
         chunk = []
 
-        async for user in participants:
+        async for user in message.client.iter_participants(message.to_id):
             if chat in self.stop_chats:
                 await self.client.send_message(chat, "🛑 Остановлено")
                 return
 
-            if user.deleted or user.id in ignore:
+            if getattr(user, 'deleted', False) or user.id in ignore:
                 continue
 
-            name = user.first_name or "User"
-            if user.last_name:
-                name += f" {user.last_name}"
-            name = name.replace("<", "&lt;").replace(">", "&gt;")
+            name = (user.first_name or "User") + (f" {user.last_name}" if user.last_name else "")
             name = (name[:30] + "...") if len(name) > 33 else name
+            name = name.replace("<", "&lt;").replace(">", "&gt;")
 
-            tag = (
-                f'<a href="tg://user?id={user.id}">{custom_text}</a>'
-                if custom_text else f'<a href="tg://user?id={user.id}">{name}</a>'
-            )
-
+            tag = f'<a href="tg://user?id={user.id}">{custom_text or name}</a>'
             chunk.append(tag)
 
             if len(chunk) >= limit:
-                await self.client.send_message(chat, "\n".join(chunk))
-                sleep(self.config["ANTIFLOOD_DELAY"])
+                msg = await self.client.send_message(chat, "
+".join(chunk))
+                if delete_after:
+                    await asyncio.sleep(self.config["DELETE_DELAY"])
+                    await msg.delete()
+                await asyncio.sleep(self.config["ANTIFLOOD_DELAY"])
                 chunk = []
 
         if chunk and chat not in self.stop_chats:
-            await self.client.send_message(chat, "\n".join(chunk))
+            msg = await self.client.send_message(chat, "
+".join(chunk))
+                if delete_after:
+                    await asyncio.sleep(self.config["DELETE_DELAY"])
+                    await msg.delete()
 
     @loader.sudo
     async def tignorecmd(self, message):
-        """<@user/id> — добавить пользователя в игнор"""
         reply = await message.get_reply_message()
         args = utils.get_args(message)
-        user = None
-
-        if reply:
-            user = await self.client.get_entity(reply.sender_id)
-        elif args:
-            user = await self.client.get_entity(args[0])
+        user = await self.client.get_entity(reply.sender_id if reply else args[0] if args else None)
 
         if not user:
             return await message.edit("❌ Не найдено")
 
         ignore = self.config["IGNORE_LIST"]
-
         if user.id not in ignore:
             ignore.append(user.id)
             self.config["IGNORE_LIST"] = ignore
@@ -179,21 +165,14 @@ class TagallMod(loader.Module):
 
     @loader.sudo
     async def tunignorecmd(self, message):
-        """<@user/id> — убрать пользователя из игнора"""
         reply = await message.get_reply_message()
         args = utils.get_args(message)
-        user = None
-
-        if reply:
-            user = await self.client.get_entity(reply.sender_id)
-        elif args:
-            user = await self.client.get_entity(args[0])
+        user = await self.client.get_entity(reply.sender_id if reply else args[0] if args else None)
 
         if not user:
             return await message.edit("❌ Не найдено")
 
         ignore = self.config["IGNORE_LIST"]
-
         if user.id in ignore:
             ignore.remove(user.id)
             self.config["IGNORE_LIST"] = ignore
@@ -203,7 +182,6 @@ class TagallMod(loader.Module):
 
     @loader.sudo
     async def tignlistcmd(self, message):
-        """Показать список игнора"""
         ignore = self.config["IGNORE_LIST"]
         if not ignore:
             return await message.edit("📭 Пусто")
@@ -213,7 +191,7 @@ class TagallMod(loader.Module):
             try:
                 user = await self.client.get_entity(uid)
                 text += f"- {user.first_name} (<code>{uid}</code>)\n"
-            except:
+            except Exception:
                 text += f"- <code>{uid}</code>\n"
 
         await message.edit(text)
