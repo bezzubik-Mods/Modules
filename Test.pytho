@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from userbot import loader
+from ... import loader
 import asyncio
 from telethon.tl.functions.account import UpdateStatusRequest
 
