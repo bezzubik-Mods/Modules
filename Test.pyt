@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 from userbot import loader
 import asyncio
 from telethon.tl.functions.account import UpdateStatusRequest
@@ -7,7 +6,7 @@ from telethon.tl.functions.account import UpdateStatusRequest
 
 @loader.Module
 class GhostOfflineHeroku(loader.Module):
-    """Полный OFFLINE. Чистый модуль под Heroku/Codraggo."""
+    """Полный OFFLINE для Codraggo Heroku. Без ошибок."""
 
     strings = {"name": "GhostOfflineHeroku"}
 
@@ -20,41 +19,29 @@ class GhostOfflineHeroku(loader.Module):
         self.client = client
         self._active = True
 
-        # Ставим offline при старте (важно на Heroku)
+        # Ставим offline сразу при старте
         try:
-            await client(UpdateStatusRequest(offline=True))
-        except:
+            await self.client(UpdateStatusRequest(offline=True))
+        except Exception:
             pass
 
-        # ПЕРЕХВАТ И БЛОКИРОВКА ОНЛАЙНА
-        # Codraggo использует свой sender внутри client._sender
-        sender = getattr(client, "_sender", None)
-        if sender is not None and hasattr(sender, "send_ping"):
-            if not hasattr(sender, "_orig_send_ping"):
-
-                sender._orig_send_ping = sender.send_ping
-
-                async def no_ping(*args, **kwargs):
-                    # Полная блокировка любого пинга
-                    return None
-
-                sender.send_ping = no_ping
-
-        # создаем цикл поддержания offline
+        # Создаем цикл поддержания offline каждые 7 секунд
         self.task = asyncio.create_task(self._offline_loop())
 
     async def _offline_loop(self):
         while self._active:
             try:
                 await self.client(UpdateStatusRequest(offline=True))
-            except:
+            except Exception:
                 pass
             await asyncio.sleep(7)
 
     async def ghostherokuoncmd(self, msg):
         """Включить Ghost Offline"""
         self._active = True
-        self.task = asyncio.create_task(self._offline_loop())
+        # Перезапускаем цикл
+        if self.task is None or self.task.done():
+            self.task = asyncio.create_task(self._offline_loop())
         await msg.edit("🟢 GhostOfflineHeroku включён")
 
     async def ghostherokuoffcmd(self, msg):
