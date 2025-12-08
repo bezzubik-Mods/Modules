@@ -1,0 +1,62 @@
+# -*- coding: utf-8 -*-
+from userbot import loader
+import asyncio
+from telethon.tl.functions.account import UpdateStatusRequest
+
+# В Codraggo Telethon sender лежит ТУТ:
+try:
+    from telethon.network.connection.connection import Connection
+except:
+    Connection = None
+
+
+@loader.tds
+class GhostOffline(loader.Module):
+    """Полный OFFLINE для Heroku/Codraggo Userbot."""
+
+    strings = {"name": "GhostOffline"}
+
+    async def client_ready(self, client, db):
+        self.client = client
+        self._active = True
+
+        # ---- 1. Ставим offline сразу ----
+        try:
+            await client(UpdateStatusRequest(offline=True))
+        except:
+            pass
+
+        # ---- 2. Глушим авто-пинг Codraggo ----
+        # В Codraggo метод называется send_ping (без _)
+        if Connection and hasattr(Connection, "send_ping"):
+            if not hasattr(Connection, "_orig_send_ping"):
+
+                Connection._orig_send_ping = Connection.send_ping
+
+                async def no_ping(self, *a, **kw):
+                    # Блокируем автоматический пинг => Telegram НЕ ставит online
+                    return None
+
+                Connection.send_ping = no_ping
+
+        # ---- 3. Цикл поддержания offline ----
+        self.task = asyncio.create_task(self._offline_loop())
+
+    async def _offline_loop(self):
+        while self._active:
+            try:
+                await self.client(UpdateStatusRequest(offline=True))
+            except:
+                pass
+            await asyncio.sleep(6)
+
+    async def ghostoncmd(self, m):
+        """Включить GhostOffline"""
+        self._active = True
+        self.task = asyncio.create_task(self._offline_loop())
+        await m.edit("🟢 GhostOffline включён для Codraggo")
+
+    async def ghostoffcmd(self, m):
+        """Выключить GhostOffline"""
+        self._active = False
+        await m.edit("⚪ GhostOffline выключён")
