@@ -1,5 +1,4 @@
 # meta developer: @bezzubik_modules и @space_modules
-__version__: (1.1.0)
 
 from .. import loader, utils
 import io
