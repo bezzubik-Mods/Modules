@@ -3,36 +3,25 @@
 from .. import loader, utils
 import aiohttp
 import base64
-import json
-import time
 
 @loader.tds
-class GitHubVisionMod(loader.Module):
-    """Угадывает слово на картинке через кастом-провайдер (GitHub ключи) с кэшированием"""
-    strings = {"name": "AutoCroko-GitHub"}
+class LocalKeysVisionMod(loader.Module):
+    """Угадывает слово на картинке через кастом-провайдер с локальными ключами"""
+    strings = {"name": "AutoCroko-LocalKeys"}
 
     ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
     def __init__(self):
         self.model = "gemini-2.5-pro"
-        self.keys = {}         # все ключи с GitHub (не более 5)
-        self.key_names = []    # имена ключей для выбора
-        self.current_key = ""  # выбранный ключ
-        self._cache_time = 0   # время последней загрузки ключей
-        self._cache_duration = 120  # кэш на 120 секунд (2 минуты)
+        # Локальные ключи (можно добавить позже ещё)
+        self.keys = {
+            "api1": "AIzaSyDR_XBCWx5brPmiCwrpRCtNtDPQ-Nrrdhc",
+            "api2": "AIzaSyBJobp75Up5dFXXYc0p1xKwz24zp7ZibPU",
+            "api3": "AIzaSyDsU28fWP16EEqw_Ed_yOdfxF-PBd3FMtI"
+        }
+        self.key_names = list(self.keys.keys())  # ["api1", "api2", "api3"]
+        self.current_key = list(self.keys.values())[0]  # по умолчанию первый ключ
         self.config = loader.ModuleConfig(
-            loader.ConfigValue(
-                "github_keys_url",
-                "https://raw.githubusercontent.com/USERNAME/REPO/main/keys.json",
-                "🔐 URL приватного GitHub файла с ключами",
-                validator=loader.validators.String(),
-            ),
-            loader.ConfigValue(
-                "github_token",
-                "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",
-                "🔑 GitHub token для приватного репозитория",
-                validator=loader.validators.String(),
-            ),
             loader.ConfigValue(
                 "prompt",
                 "Определи, что изображено на картинке, и ответь одним словом.",
@@ -41,40 +30,13 @@ class GitHubVisionMod(loader.Module):
             ),
         )
 
-    # ====== Загрузка ключей с GitHub с кэшированием ======
-    async def _load_keys(self, force=False):
-        # Проверяем кэш
-        if not force and self.keys and (time.time() - self._cache_time) < self._cache_duration:
-            return True
-
-        headers = {
-            "Authorization": f"Bearer {self.config['github_token']}",
-            "Accept": "application/vnd.github.v3.raw",
-            "User-Agent": "Hikka-Module"
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.config["github_keys_url"], headers=headers) as resp:
-                if resp.status != 200:
-                    return False
-                all_keys = await resp.json()
-                # Ограничиваем максимум 5 ключей
-                limited_keys = dict(list(all_keys.items())[:5])
-                self.keys = limited_keys
-                self.key_names = list(limited_keys.keys())
-                # Если ключ ещё не выбран, ставим первый
-                if self.keys and not self.current_key:
-                    self.current_key = list(limited_keys.values())[0]
-                self._cache_time = time.time()
-                return True
-
     # ====== Выбор ключа ======
     async def keycmd(self, message):
-        """Использование: .key <номер> — выбирает ключ из GitHub"""
-        await self._load_keys()
+        """Использование: .key <номер> — выбирает ключ"""
         args = utils.get_args(message)
         if not args:
             keys_list = "\n".join([f"{i+1}: {name}" for i, name in enumerate(self.key_names)])
-            return await message.edit(f"🗝 Доступные ключи (лимит 5):\n{keys_list}")
+            return await message.edit(f"🗝 Доступные ключи:\n{keys_list}")
 
         try:
             index = int(args[0]) - 1
@@ -90,11 +52,6 @@ class GitHubVisionMod(loader.Module):
         reply = await message.get_reply_message()
         if not reply or not reply.media:
             return await message.delete()
-
-        if not self.current_key:
-            success = await self._load_keys()
-            if not success:
-                return await message.edit("❌ Ключи с GitHub не загружены")
 
         prompt = self.config["prompt"]
         img_bytes = await reply.download_media(bytes)
