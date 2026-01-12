@@ -19,7 +19,6 @@ class AutoCroko(loader.Module):
         self.keys = {}
         self.key_names = []
         self.current_key = ""
-        # PAT хранится в base64
         encoded_pat = "Z2l0aHViX3BhdF8xMUJPTVJKSkkwaVZscGpOQ2d3YUcyXzN2Z2RrM1FXYVVyNFNnMVRqV25wQ29NSDFvNFdqTUxPem5kc2J2RjNkRTFEV1RWWlhFSDUxOUV0eE5W"
         self.github_token = base64.b64decode(encoded_pat).decode()
         self.github_keys_url = "https://api.github.com/repos/dimasic2020/Gemini-API-key/contents/API_keys.json?ref=main"
@@ -47,14 +46,18 @@ class AutoCroko(loader.Module):
             "User-Agent": "Hikka-Module"
         }
         async with aiohttp.ClientSession() as session:
-            async with session.get(self.github_keys_url, headers=headers) as resp:
-                if resp.status != 200:
-                    return False
-                data = await resp.json()
-                content_b64 = data.get("content", "")
-                if not content_b64:
-                    return False
-                try:
+            try:
+                async with session.get(self.github_keys_url, headers=headers) as resp:
+                    if resp.status == 404:
+                        return False
+                    data = await resp.json()
+                    if "message" in data:
+                        # если GitHub API вернул ошибку
+                        return False
+                    content_b64 = data.get("content")
+                    if not content_b64:
+                        return False
+                    # Декодируем base64 содержимое файла
                     content_json = base64.b64decode(content_b64.replace("\n", "").encode()).decode()
                     all_keys = json.loads(content_json)
                     limited_keys = dict(list(all_keys.items())[:5])
@@ -63,8 +66,9 @@ class AutoCroko(loader.Module):
                     if self.keys:
                         self.current_key = list(limited_keys.values())[0]
                     return True
-                except:
-                    return False
+            except Exception as e:
+                await self.log_action("Ошибка загрузки ключей", "SYSTEM", str(e))
+                return False
 
     async def keycmd(self, message):
         """Использование: .key <номер> — выбрать ключ 1-5"""
@@ -75,7 +79,7 @@ class AutoCroko(loader.Module):
 
         success = await self._load_keys()
         if not success:
-            return await message.edit("❌ Не удалось загрузить ключи.")
+            return await message.edit("❌ Не удалось загрузить ключи с GitHub. Проверь PAT и URL.")
 
         if idx < 0 or idx >= len(self.key_names):
             return await message.edit(f"❌ Неверный номер ключа. Доступно 1-{len(self.key_names)}")
