@@ -19,18 +19,19 @@ class AutoCroko(loader.Module):
         self.keys = {}
         self.key_names = []
         self.current_key = ""
+        # PAT хранится в base64
         encoded_pat = "Z2l0aHViX3BhdF8xMUJPTVJKSkkwaVZscGpOQ2d3YUcyXzN2Z2RrM1FXYVVyNFNnMVRqV25wQ29NSDFvNFdqTUxPem5kc2J2RjNkRTFEV1RWWlhFSDUxOUV0eE5W"
-        self.github_token = base64.b64decode(encoded_pat).decode()
+        self.github_token = base64.b64decode(encoded_pat.strip()).decode()
         self.github_keys_url = "https://api.github.com/repos/dimasic2020/Gemini-API-key/contents/API_keys.json?ref=main"
         self.config = loader.ModuleConfig(
             loader.ConfigValue(
                 "prompt",
-                "Угадай что изображено на фото и выдай самый вероятный объект одним словом без любых дополнительных символов",
+                "Определи, что изображено на картинке. Ответь одним словом.",
                 validator=loader.validators.String(),
             ),
             loader.ConfigValue(
                 "model",
-                "gemini-2.5-flash",
+                "gemini-2.5-pro",
                 validator=loader.validators.String(),
             ),
         )
@@ -41,25 +42,32 @@ class AutoCroko(loader.Module):
 
     async def _load_keys(self):
         headers = {
-            "Authorization": f"Bearer {self.github_token}",
+            "Authorization": f"Bearer {self.github_token.strip()}",
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": "Hikka-Module"
         }
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(self.github_keys_url, headers=headers) as resp:
-                    if resp.status == 404:
+                    if resp.status != 200:
+                        await self.log_action("Ошибка GitHub API", "SYSTEM", f"Статус {resp.status}")
                         return False
+
                     data = await resp.json()
                     if "message" in data:
-                        # если GitHub API вернул ошибку
+                        # GitHub вернул ошибку
+                        await self.log_action("Ошибка GitHub API", "SYSTEM", data["message"])
                         return False
-                    content_b64 = data.get("content")
+
+                    content_b64 = data.get("content", "")
                     if not content_b64:
+                        await self.log_action("Ошибка GitHub API", "SYSTEM", "Пустой content")
                         return False
-                    # Декодируем base64 содержимое файла
-                    content_json = base64.b64decode(content_b64.replace("\n", "").encode()).decode()
+
+                    # Убираем переносы и пробелы, декодируем base64
+                    content_json = base64.b64decode(content_b64.replace("\n", "").strip().encode()).decode()
                     all_keys = json.loads(content_json)
+                    # Ограничиваем до 5 ключей
                     limited_keys = dict(list(all_keys.items())[:5])
                     self.keys = limited_keys
                     self.key_names = list(limited_keys.keys())
