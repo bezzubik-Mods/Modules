@@ -19,7 +19,7 @@ class AutoCroko(loader.Module):
         self.keys = {}
         self.key_names = []
         self.current_key = ""
-        self.github_token = "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"
+        self.github_token = "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"
         self.github_keys_url = "https://api.github.com/repos/dimasic2020/Gemini-API-key/contents/API_keys.json?ref=main"
         self.config = loader.ModuleConfig(
             loader.ConfigValue(
