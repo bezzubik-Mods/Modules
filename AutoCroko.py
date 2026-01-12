@@ -1,122 +1,169 @@
-# meta developer: @bezzubik_modules и @space_modules
+# meta developer: @bezzubik_modules
+# copyright: © bezzubik
 
 from .. import loader, utils
 import aiohttp
 import base64
-import time
+import asyncio
+import logging
+import json
+
+logger = logging.getLogger(__name__)
+
 
 @loader.tds
-class GitHubKeyVisionMod(loader.Module):
-    """Угадывает слово на картинке через ключи из приватного GitHub репозитория"""
-    strings = {"name": "AutoCroko-GitHubKey"}
+class AutoCroko(loader.Module):
+    """Угадывает слово на картинке"""
 
-    ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    strings = {"name": "auto croko"}
+
+    GITHUB_API_URL = "https://api.github.com/repos/dimasic2020/Gemini-API-key/contents/API_keys.json?ref=main"
+
+    GEMINI_ENDPOINT = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "{model}:generateContent"
+    )
+
+    DEFAULT_PROMPT = (
+        "Посмотри на изображение и угадай что на нём изображено, "
+        "даже если не уверен выбери самый вероятный вариант и ответь "
+        "строго одним словом без пояснений кавычек символов и переносов строк"
+    )
 
     def __init__(self):
-        self.model = "gemini-2.5-pro"
+        self.model = "gemini-2.5-flash"
         self.keys = {}
-        self.key_names = []
-        self.current_key = ""
-        self._cache_time = 0
-        self._cache_duration = 120  # кэш на 2 минуты
+        self.current_key = None
+
         self.config = loader.ModuleConfig(
             loader.ConfigValue(
-                "github_keys_url",
-                "https://raw.githubusercontent.com/dimasic2020/Gemini-API-key/main/API_keys.json",
-                "🔐 URL приватного GitHub файла с ключами",
-                validator=loader.validators.String(),
-            ),
-            loader.ConfigValue(
-                "github_token",
-                "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",
-                "🔑 GitHub token для приватного репозитория",
-                validator=loader.validators.String(),
-            ),
-            loader.ConfigValue(
                 "prompt",
-                "Определи, что изображено на картинке, и ответь одним словом.",
-                "🧠 Prompt",
+                self.DEFAULT_PROMPT,
+                "Промпт",
                 validator=loader.validators.String(),
+            ),
+            loader.ConfigValue(
+                "model",
+                "gemini-2.5-flash",
+                "Модель",
+                validator=loader.validators.String(),
+            ),
+            loader.ConfigValue(
+                "delay",
+                1,
+                "Задержка перед отправкой",
+                validator=loader.validators.Integer(minimum=0, maximum=10),
             ),
         )
 
-    async def _load_keys(self, force=False):
-        if not force and self.keys and (time.time() - self._cache_time) < self._cache_duration:
-            return True
+        self.github_pat = "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"
 
+    async def client_ready(self, client, db):
+        await self._load_keys()
+
+    async def _load_keys(self):
         headers = {
-            "Authorization": f"Bearer {self.config['github_token']}",
-            "Accept": "application/vnd.github.v3.raw",
-            "User-Agent": "Hikka-Module"
+            "Authorization": f"Bearer {self.github_pat}",
+            "Accept": "application/vnd.github+json",
         }
+
         async with aiohttp.ClientSession() as session:
-            async with session.get(self.config["github_keys_url"], headers=headers) as resp:
+            async with session.get(self.GITHUB_API_URL, headers=headers) as resp:
                 if resp.status != 200:
-                    return False
-                all_keys = await resp.json()
-                limited_keys = dict(list(all_keys.items())[:5])
-                self.keys = limited_keys
-                self.key_names = list(limited_keys.keys())
-                if self.keys and not self.current_key:
-                    self.current_key = list(limited_keys.values())[0]
-                self._cache_time = time.time()
-                return True
+                    logger.error("GitHub API error %s", resp.status)
+                    return
+
+                data = await resp.json()
+                content = base64.b64decode(data["content"]).decode()
+                self.keys = json.loads(content)
+
+                if self.keys:
+                    self.current_key = list(self.keys.values())[0]
+
+        logger.info("Ключи загружены: %s", list(self.keys.keys()))
 
     async def keycmd(self, message):
-        """Использование: .key <номер> — выбирает ключ из GitHub"""
-        success = await self._load_keys()
-        if not success:
-            return await message.edit("❌ Не удалось загрузить ключи с GitHub")
+        """Использование: .key <номер>"""
 
-        args = utils.get_args(message)
-        if not args:
-            keys_list = "\n".join([f"{i+1}: {name}" for i, name in enumerate(self.key_names)])
-            return await message.edit(f"🗝 Доступные ключи (лимит 5):\n{keys_list}")
+        args = utils.get_args_raw(message)
+        if not args.isdigit():
+            return await utils.answer(
+                message,
+                "❌ Использование: .key <номер>\nПример: .key 1",
+            )
 
-        try:
-            idx = int(args[0]) - 1
-            key_name = self.key_names[idx]
-            self.current_key = self.keys[key_name]
-            await message.edit(f"✅ Выбран ключ: {key_name}")
-        except:
-            await message.edit("❌ Неверный номер ключа")
+        idx = int(args) - 1
+        keys_list = list(self.keys.values())
+
+        if idx < 0 or idx >= len(keys_list):
+            return await utils.answer(message, "❌ Такого ключа нет")
+
+        self.current_key = keys_list[idx]
+        await utils.answer(message, f"✅ Выбран key {idx + 1}")
 
     async def угадайcmd(self, message):
         """Использование: .угадай <реплай на фото>"""
+
         reply = await message.get_reply_message()
         if not reply or not reply.media:
-            return await message.delete()
+            return await utils.answer(message, "❌ Ответь на сообщение с изображением")
 
         if not self.current_key:
-            success = await self._load_keys()
-            if not success:
-                return await message.edit("❌ Ключи с GitHub не загружены")
+            return await utils.answer(message, "❌ Ключ не выбран")
 
-        prompt = self.config["prompt"]
-        img_bytes = await reply.download_media(bytes)
-        img_b64 = base64.b64encode(img_bytes).decode()
+        try:
+            img_bytes = await reply.download_media(bytes)
+            img_b64 = base64.b64encode(img_bytes).decode()
+        except Exception:
+            return await utils.answer(message, "❌ Не удалось загрузить изображение")
+
+        await asyncio.sleep(self.config["delay"])
 
         headers = {
             "Content-Type": "application/json",
-            "x-goog-api-key": self.current_key
+            "x-goog-api-key": self.current_key,
         }
+
         payload = {
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {"inline_data": {"mime_type": "image/png", "data": img_b64}}
-                ]
-            }]
+            "contents": [
+                {
+                    "parts": [
+                        {"text": self.config["prompt"]},
+                        {
+                            "inline_data": {
+                                "mime_type": "image/png",
+                                "data": img_b64,
+                            }
+                        },
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.2,
+                "maxOutputTokens": 5,
+            },
         }
+
+        url = self.GEMINI_ENDPOINT.format(model=self.config["model"])
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(self.ENDPOINT.format(model=self.model), headers=headers, json=payload) as resp:
-                try:
-                    data = await resp.json()
-                except:
-                    return await message.edit("❌ Ошибка при получении ответа от API")
+            async with session.post(url, headers=headers, json=payload) as resp:
+                if resp.status != 200:
+                    return await utils.answer(
+                        message, f"❌ API вернул статус {resp.status}"
+                    )
+                data = await resp.json()
 
-        text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+        text = (
+            data.get("candidates", [{}])[0]
+            .get("content", {})
+            .get("parts", [{}])[0]
+            .get("text", "")
+            .strip()
+        )
+
+        if not text:
+            return await utils.answer(message, "❌ Пустой ответ")
+
         await message.delete()
-        if text:
-            await message.client.send_message(message.to_id, text)
+        await message.client.send_message(message.to_id, text)
