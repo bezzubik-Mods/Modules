@@ -7,12 +7,12 @@
 
 # Module: auto croko
 # Developer: bezzubik
-# copyright © bezzubik
+# Description: Угадывает, что изображено на картинке
 
 import asyncio
 import json
+import base64
 import aiohttp
-
 from heroku import loader, utils
 
 
@@ -67,23 +67,17 @@ class AutoCroko(loader.Module):
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": "auto-croko"
         }
-
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(self.github_url, headers=headers) as r:
                     if r.status != 200:
                         raise Exception(f"GitHub status {r.status}")
-
                     data = await r.json()
                     content = data.get("content")
                     if not content:
                         raise Exception("No content")
-
-                    decoded = json.loads(
-                        aiohttp.helpers.base64.b64decode(content).decode()
-                    )
+                    decoded = json.loads(base64.b64decode(content).decode())
                     self.api_keys = list(decoded.values())
-
         except Exception as e:
             await self.log_error("load_keys", e)
 
@@ -122,7 +116,8 @@ class AutoCroko(loader.Module):
                 await utils.answer(message, self.strings["no_keys"])
                 return
 
-            file = await message.client.download_media(reply.photo, bytes)
+            file_bytes = await message.client.download_media(reply.photo, bytes)
+            img_b64 = base64.b64encode(file_bytes).decode()
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -132,19 +127,14 @@ class AutoCroko(loader.Module):
                         "contents": [{
                             "parts": [
                                 {"text": self.prompt},
-                                {
-                                    "inline_data": {
-                                        "mime_type": "image/jpeg",
-                                        "data": file.hex()
-                                    }
-                                }
+                                {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}}
                             ]
                         }]
                     }
                 ) as r:
                     data = await r.json()
+                    # берем первое слово из ответа
                     text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                    # оставляем только первое слово для вывода
                     first_word = text.strip().split()[0] if text else ""
                     await utils.answer(message, first_word)
 
