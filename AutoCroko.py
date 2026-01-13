@@ -5,9 +5,9 @@
 # ██║  ██║╚██████╔╝   ██║   ╚██████╔╝╚██████╗██║  ██║╚██████╔╝██║  ██╗╚██████╔╝
 # ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝  ╚═════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝
 
-# Module: auto croko
+# copyright © bezzubik
 # Developer: bezzubik
-# Description: Угадывает, что изображено на картинке
+# meta_developer: @bezzubik_modules and @space_modules
 
 import asyncio
 import json
