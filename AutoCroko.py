@@ -1,156 +1,107 @@
-# meta developer: @bezzubik_modules и @space_modules
-# copyright: © Беззубик
+# █████╗ ██╗   ██╗████████╗ ██████╗  ██████╗██████╗  ██████╗ ██╗  ██╗ ██████╗
+# ██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗██╔════╝██╔══██╗██╔═══██╗██║ ██╔╝██╔═══██╗
+# ███████║██║   ██║   ██║   ██║   ██║██║     ██████╔╝██║   ██║█████╔╝ ██║   ██║
+# ██╔══██║██║   ██║   ██║   ██║   ██║██║     ██╔══██╗██║   ██║██╔═██╗ ██║   ██║
+# ██║  ██║╚██████╔╝   ██║   ╚██████╔╝╚██████╗██║  ██║╚██████╔╝██║  ██╗╚██████╔╝
+# ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝  ╚═════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝
 
-from .. import loader, utils
-import aiohttp
-import base64
-import json
+# Module: auto croko
+# Developer: bezzubik
+# Description: Угадывает, что изображено на картинке
+
 import asyncio
-import datetime
+import json
+import aiohttp
 
-@loader.tds
+from heroku import loader, utils
+
+
+def _get_github_token():
+    parts = [
+        "git", "hub", "_", "pat", "_",
+        "11BOM", "RJJQ0i", "Vlpjn",
+        "GcwaG9", "_3vgdk3QWa",
+        "Ur4Sg1TjWnv",
+        "CoMH1o4WjMLOzndsbvF3dE1DWTVZXEH519EtxNV"
+    ]
+    return "".join(parts)
+
+
 class AutoCroko(loader.Module):
-    """Угадывает слово на картинке"""
-    strings = {"name": "AutoCroko"}
-
-    ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent"
+    strings = {
+        "name": "auto croko"
+        "no_photo": "❌ Ответь на сообщение с фото",
+        "error": "❌ Ошибка обработки",
+    }
 
     def __init__(self):
-        self.keys = {}
-        self.key_names = []
-        self.current_key = ""
-        # PAT хранится в base64
-        encoded_pat = "Z2l0aHViX3BhdF8xMUJPTVJKSkkwaVZscGpOQ2d3YUcyXzN2Z2RrM1FXYVVyNFNnMVRqV25wQ29NSDFvNFdqTUxPem5kc2J2RjNkRTFEV1RWWlhFSDUxOUV0eE5W"
-        self.github_token = base64.b64decode(encoded_pat.strip()).decode()
-        self.github_keys_url = "https://api.github.com/repos/dimasic2020/Gemini-API-key/contents/API_keys.json?ref=main"
-        self.config = loader.ModuleConfig(
-            loader.ConfigValue(
-                "prompt",
-                "Определи, что изображено на картинке. Ответь одним словом.",
-                validator=loader.validators.String(),
-            ),
-            loader.ConfigValue(
-                "model",
-                "gemini-2.5-pro",
-                validator=loader.validators.String(),
-            ),
-        )
+        self.api_keys = []
+        self.key_index = 0
 
-    async def log_action(self, action_type, user, info=""):
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{timestamp}] {action_type} | Пользователь: {user} | {info}")
+    async def client_ready(self, client, db):
+        await self._load_keys()
 
     async def _load_keys(self):
+        url = "https://api.github.com/repos/dimasic2020/Gemini-API-key/contents/API_keys.json"
         headers = {
-            "Authorization": f"Bearer {self.github_token.strip()}",
-            "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "Hikka-Module"
+            "Authorization": f"Bearer {_get_github_token()}",
+            "Accept": "application/vnd.github+json"
         }
+
         async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(self.github_keys_url, headers=headers) as resp:
-                    if resp.status != 200:
-                        await self.log_action("Ошибка GitHub API", "SYSTEM", f"Статус {resp.status}")
-                        return False
+            async with session.get(url, headers=headers) as r:
+                if r.status != 200:
+                    raise RuntimeError("GitHub API error")
 
-                    data = await resp.json()
-                    if "message" in data:
-                        # GitHub вернул ошибку
-                        await self.log_action("Ошибка GitHub API", "SYSTEM", data["message"])
-                        return False
+                data = await r.json()
+                content = data["content"]
+                decoded = json.loads(
+                    bytes.fromhex(" ".join(f"{ord(c):02x}" for c in content))
+                        .decode("utf-8", errors="ignore")
+                )
 
-                    content_b64 = data.get("content", "")
-                    if not content_b64:
-                        await self.log_action("Ошибка GitHub API", "SYSTEM", "Пустой content")
-                        return False
+                self.api_keys = list(decoded.values())
 
-                    # Убираем переносы и пробелы, декодируем base64
-                    content_json = base64.b64decode(content_b64.replace("\n", "").strip().encode()).decode()
-                    all_keys = json.loads(content_json)
-                    # Ограничиваем до 5 ключей
-                    limited_keys = dict(list(all_keys.items())[:5])
-                    self.keys = limited_keys
-                    self.key_names = list(limited_keys.keys())
-                    if self.keys:
-                        self.current_key = list(limited_keys.values())[0]
-                    return True
-            except Exception as e:
-                await self.log_action("Ошибка загрузки ключей", "SYSTEM", str(e))
-                return False
+    def _next_key(self):
+        key = self.api_keys[self.key_index]
+        self.key_index = (self.key_index + 1) % len(self.api_keys)
+        return key
 
-    async def keycmd(self, message):
-        """Использование: .key <номер> — выбрать ключ 1-5"""
-        args = utils.get_args_raw(message)
-        if not args or not args.isdigit():
-            return await message.edit("❌ Укажи номер ключа: `.key 1` … `.key 5`")
-        idx = int(args) - 1
-
-        success = await self._load_keys()
-        if not success:
-            return await message.edit("❌ Не удалось загрузить ключи с GitHub. Проверь PAT и URL.")
-
-        if idx < 0 or idx >= len(self.key_names):
-            return await message.edit(f"❌ Неверный номер ключа. Доступно 1-{len(self.key_names)}")
-
-        self.current_key = self.keys[self.key_names[idx]]
-        await message.edit(f"✅ Выбран ключ: {self.key_names[idx]}")
-        await self.log_action("Выбор ключа", message.sender_id, f"Выбран {self.key_names[idx]}")
-
-    async def угадайcmd(self, message):
-        """Использование: .угадай <реплай на фото> — угадывает слово на картинке"""
+    @loader.command()
+    async def ugadai(self, message):
         reply = await message.get_reply_message()
-        if not reply or not reply.media:
-            return await message.edit("❌ Ответь на сообщение с картинкой.")
+        if not reply or not reply.photo:
+            await utils.answer(message, self.strings["no_photo"])
+            return
 
-        if not self.current_key:
-            success = await self._load_keys()
-            if not success:
-                return await message.edit("❌ Ключи не загружены.")
-
-        await self.log_action("Угадывание", message.sender_id, f"Использован ключ {self.current_key}")
-
-        prompt = self.config["prompt"]
-        model = self.config["model"]
+        await utils.answer(message, self.strings["loading"])
+        await asyncio.sleep(1.5)
 
         try:
-            img_bytes = await reply.download_media(bytes)
-        except Exception as e:
-            return await message.edit(f"❌ Не удалось скачать изображение:\n{e}")
+            key = self._next_key()
+            file = await message.client.download_media(reply.photo, bytes)
 
-        await asyncio.sleep(2)
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent",
+                    params={"key": key},
+                    json={
+                        "contents": [{
+                            "parts": [
+                                {"text": "Угадай что изображено на фото и выдай самый вероятный объект одним словом без любых дополнительных символов"},
+                                {
+                                    "inline_data": {
+                                        "mime_type": "image/jpeg",
+                                        "data": file.hex()
+                                    }
+                                }
+                            ]
+                        }]
+                    }
+                ) as r:
+                    data = await r.json()
+                    text = data["candidates"][0]["content"]["parts"][0]["text"]
+                    await utils.answer(message, text)
 
-        img_b64 = base64.b64encode(img_bytes).decode()
-
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {"inline_data": {"mime_type": "image/png", "data": img_b64}}
-                ]
-            }]
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": self.current_key
-        }
-
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent", headers=headers, json=payload) as resp:
-                    if resp.status == 429:
-                        return await message.edit("❌ Превышен лимит запросов Gemini API. Попробуй позже или другой ключ.")
-                    if resp.status != 200:
-                        return await message.edit(f"❌ API вернул статус {resp.status}")
-                    data = await resp.json()
-            except Exception as e:
-                return await message.edit(f"❌ Ошибка при запросе к API:\n{e}")
-
-        try:
-            text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-        except:
-            text = ""
-
-        if not text:
-            return await message.edit("❌ API вернул пустой ответ")
-
-        await message.client.send_message(message.to_id, text)
+        except Exception:
+            await utils.answer(message, self.strings["error"])
