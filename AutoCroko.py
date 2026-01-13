@@ -7,7 +7,7 @@
 
 # copyright © bezzubik
 # Developer: bezzubik
-# meta_developer: @bezzubik_modules and @space_modules
+# meta developer: @bezzubik_modules and @space_modules
 
 import asyncio
 import json
