@@ -46,7 +46,7 @@ class AutoCroko(loader.Module):
             "contents/API_keys.json?ref=main"
         )
         self.model = "gemini-2.5-flash"
-        self.prompt = "Угадай что изображено на фото"
+        self.prompt = "Угадай что изображено на фото и выдай самый вероятный объект одним словом без любых дополнительных символов"
 
     async def client_ready(self, client, db):
         self.client = client
