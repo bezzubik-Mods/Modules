@@ -8,7 +8,6 @@
 # Developer: bezzubik
 # meta developer: @bezzubik_modules and @space_modules
 
-import asyncio
 import json
 import base64
 import aiohttp
@@ -42,25 +41,22 @@ class AutoCroko(loader.Module):
         "error": "❌ Ошибка обработки",
         "no_keys": "❌ Ключи API не загружены",
         "key_switched": "✅ Активный ключ: {}",
-        "bad_key": "❌ Ключ невалидный/не поддерживается",
     }
 
     def __init__(self):
         self.api_keys = []
         self.key_index = 0
 
-        # Где лежат ключи (как и было)
         self.github_url = (
             "https://api.github.com/repos/"
             "dimasic2020/Gemini-API-key/"
             "contents/API_keys.json?ref=main"
         )
 
-        # Gemini настройки (как и было)
+        # Gemini
         self.gemini_model = "gemini-2.5-flash"
 
-        # OpenAI настройки (добавлено)
-        # Важно: модель должна уметь vision.
+        # OpenAI (ChatGPT)
         self.openai_model = "gpt-4.1-mini"
         self.openai_url = "https://api.openai.com/v1/responses"
 
@@ -103,8 +99,6 @@ class AutoCroko(loader.Module):
                         raise Exception("No content")
 
                     decoded = json.loads(base64.b64decode(content).decode("utf-8", "ignore"))
-
-                    # Берем значения как раньше, просто теперь среди них может быть OpenAI ключ (6-й)
                     self.api_keys = list(decoded.values())
 
         except Exception as e:
@@ -121,21 +115,18 @@ class AutoCroko(loader.Module):
         if not key or not isinstance(key, str):
             return False
         k = key.strip()
-        # Самый частый формат OpenAI — sk-...
-        # Также встречаются sess- (в некоторых контекстах), оставим поддержку.
         return k.startswith("sk-") or k.startswith("sess-")
 
     def _first_word(self, text: str) -> str:
         if not text:
             return ""
-        return text.strip().split()[0] if text.strip() else ""
+        text = text.strip()
+        return text.split()[0] if text else ""
 
     def _extract_openai_output_text(self, data: dict) -> str:
-        # В Responses API часто есть готовое поле output_text
         if isinstance(data, dict) and isinstance(data.get("output_text"), str):
             return data["output_text"]
 
-        # Фоллбек: пробуем вытащить текст из output массива
         try:
             out = data.get("output", [])
             if not isinstance(out, list):
@@ -183,7 +174,6 @@ class AutoCroko(loader.Module):
             "Content-Type": "application/json",
         }
 
-        # Base64 data URL
         image_url = f"data:image/jpeg;base64,{img_b64}"
 
         payload = {
@@ -239,7 +229,6 @@ class AutoCroko(loader.Module):
             file_bytes = await message.client.download_media(reply.photo, bytes)
             img_b64 = base64.b64encode(file_bytes).decode()
 
-            # Если ключ формата OpenAI — идем в ChatGPT(OpenAI), иначе в Gemini
             if self._looks_like_openai_key(key):
                 result = await self._ask_openai_one_word(key, img_b64)
             else:
@@ -250,4 +239,3 @@ class AutoCroko(loader.Module):
         except Exception as e:
             await self.log_error("у", e)
             await utils.answer(message, self.strings["error"])
-```0
